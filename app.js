@@ -3,6 +3,7 @@
 const film = window.FILM;
 const main = document.querySelector("#main");
 const controls = document.querySelector("#controls");
+const proposalTab = document.querySelector("#proposalTab");
 const workTab = document.querySelector("#storyTab");
 const sourcesTab = document.querySelector("#sourcesTab");
 const fullscreen = document.querySelector("#fullscreen");
@@ -11,11 +12,11 @@ const detail = document.querySelector("#detail");
 const detailContent = detail.querySelector(".detail-content");
 const selectedReferences = new Map();
 const chapters = {
-  salt: ["佛山南海", "盐步", "每到端午，老龙从泥里出水。"],
-  pan: ["广州荔湾", "泮塘", "顺着河涌，划去见一位老亲戚。"],
-  north: ["清远", "北江", "一条江穿过飞来峡，接上珠三角。"],
-  letter: ["汕头", "侨批", "人在海那头，信还得往家寄。"],
-  jiang: ["湛江遂溪", "江洪", "天还没亮，买鱼的人已经到了。"]
+  salt: ["珠三角 · 佛山南海", "盐步", "每到端午，老龙从泥里出水。"],
+  pan: ["珠三角 · 广州荔湾", "泮塘", "顺着河涌，划去见一位老亲戚。"],
+  north: ["粤北 · 清远", "北江", "一条江穿过飞来峡，接上珠三角。"],
+  letter: ["粤东 · 汕头", "侨批", "人在海那头，信还得往家寄。"],
+  jiang: ["粤西 · 湛江遂溪", "江洪", "天还没亮，买鱼的人已经到了。"]
 };
 const licenseLabels = {
   buy: "可购授权",
@@ -199,6 +200,47 @@ function sceneMarkup(scene, index) {
   </section>`;
 }
 
+function proposalMarkup() {
+  const copy = [
+    ["片名", `《${film.title}》`],
+    ["宣传语", film.tagline],
+    ["开篇文案", film.opening],
+    ["结尾落版", film.scenes[film.scenes.length - 1].onscreen]
+  ];
+  return `<section class="beat catalogue" id="proposal" data-mode="catalogue" aria-labelledby="proposal-title" tabindex="-1">
+    <article class="sheet submission">
+      <p class="eyebrow">阅山河 · 广东 · 03:00 / 16:9</p>
+      <h2 class="heading" id="proposal-title">创意阐述</h2>
+      <p class="creative-text">${escapeHTML(film.creative)}</p>
+      <h3>核心文案</h3>
+      <dl class="copy-list">${copy.map(([label, value]) => `<dt>${label}</dt><dd>${escapeHTML(value)}</dd>`).join("")}</dl>
+      <a class="paper-link" href="#script">阅读完整脚本 <span aria-hidden="true">↓</span></a>
+    </article>
+  </section>`;
+}
+
+function scriptMarkup() {
+  const columns = ["时码与段落", "景别、运镜与画面", "解说词与屏显", "音乐与音效"];
+  const label = index => `<span class="stack-label" aria-hidden="true">${columns[index]}</span>`;
+  return `<section class="beat catalogue" id="script" data-mode="catalogue" aria-labelledby="script-title" tabindex="-1">
+    <article class="sheet submission">
+      <p class="eyebrow">阅山河 · 广东 · 03:00 / 16:9</p>
+      <h2 class="heading" id="script-title">宣传片脚本</h2>
+      <p class="table-note">点击段落名进入分镜，查看取景与对应素材。</p>
+      <table class="script-table" aria-labelledby="script-title">
+        <thead><tr>${columns.map(column => `<th scope="col">${column}</th>`).join("")}</tr></thead>
+        <tbody>${film.scenes.map(scene => `<tr>
+          <th scope="row"><span class="slot-time mono">${timeRange(scene)} · ${scene.end - scene.start}秒</span><a class="slot-title" href="${sceneHash(scene)}">${escapeHTML(scene.title)}</a></th>
+          <td>${label(1)}${escapeHTML(scene.picture)}</td>
+          <td>${label(2)}<p>${escapeHTML(scene.voice || "无旁白")}</p>${scene.onscreen ? `<p class="script-screen"><strong>屏显</strong> ${escapeHTML(scene.onscreen)}</p>` : ""}</td>
+          <td>${label(3)}${escapeHTML(scene.sound)}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+      <a class="paper-link" href="#sources">查看素材总表 <span aria-hidden="true">↓</span></a>
+    </article>
+  </section>`;
+}
+
 function drawAudit(activeFilter = "all") {
   const audit = document.querySelector("#sources");
   const chosen = film.scenes.filter(scene => activeFilter === "all" || sceneKinds(scene).includes(activeFilter));
@@ -296,10 +338,11 @@ function showProgress() {
   motionToggle.setAttribute("aria-pressed", String(motionEnabled && !reduceMotion.matches));
   counter.textContent = scene
     ? `${String(sceneIndex + 1).padStart(2, "0")} / ${film.scenes.length}`
-    : ({ intro: "开场", atlas: "地图", focus: "站点", catalogue: "素材" })[mode];
+    : ({ cover: "开场", map: "地图", proposal: "文案", script: "脚本", sources: "素材" })[page.id] ?? "站点";
   mapTab.setAttribute("aria-current", mode === "atlas" ? "location" : "false");
-  workTab.setAttribute("aria-current", scene ? "location" : "false");
-  sourcesTab.setAttribute("aria-current", mode === "catalogue" ? "location" : "false");
+  proposalTab.setAttribute("aria-current", page.id === "proposal" ? "location" : "false");
+  workTab.setAttribute("aria-current", scene || page.id === "script" ? "location" : "false");
+  sourcesTab.setAttribute("aria-current", page.id === "sources" ? "location" : "false");
   for (const marker of markers) {
     if (Number(marker.dataset.seek) === sceneIndex) marker.setAttribute("aria-current", "step");
     else marker.removeAttribute("aria-current");
@@ -385,7 +428,7 @@ function openDetail(scene) {
 main.innerHTML = coverMarkup() + film.scenes.map((scene, index) => {
   const entersPlace = index === 0 || film.scenes[index - 1].region !== scene.region;
   return (entersPlace ? placeMarkup(scene.region, scene) : "") + sceneMarkup(scene, index);
-}).join("") + `
+}).join("") + proposalMarkup() + scriptMarkup() + `
   <section class="beat catalogue" id="sources" data-mode="catalogue" aria-labelledby="audit-title" tabindex="-1"></section>
   <footer class="credits">
     <h2>地图照片来源</h2>
