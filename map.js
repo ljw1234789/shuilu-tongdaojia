@@ -49,7 +49,7 @@ function tracePolygon(ctx, ring) {
   ctx.closePath();
 }
 
-function drawMap(canvas, labels) {
+function drawMap(canvas, labels, interactive = true) {
   const ctx = canvas.getContext("2d");
   const scale = Math.min(2, window.devicePixelRatio || 1);
   canvas.width = MAP_WIDTH * scale;
@@ -108,12 +108,14 @@ function drawMap(canvas, labels) {
     ctx.strokeStyle = "#f7efdb";
     ctx.stroke();
 
-    return `<a class="map-pin" data-place="${id}" href="${sceneHash(film.scenes[sceneIndex])}"
+    const tag = interactive ? "a" : "div";
+    const href = interactive ? ` href="${sceneHash(film.scenes[sceneIndex])}"` : "";
+    return `<${tag} class="${interactive ? "map-pin" : "stage-pin"}" data-place="${id}"${href}
               style="left:${px / MAP_WIDTH * 100}%;top:${py / MAP_HEIGHT * 100}%;--tilt:${pin.tilt}deg">
       <span class="pin-frame"><span class="pin-stamp" aria-hidden="true">${pin.stamp}</span>
         <img alt="" decoding="async" referrerpolicy="no-referrer" src="${escapeHTML(pin.image)}">
       </span><span class="pin-label">${escapeHTML(label)}</span>
-    </a>`;
+    </${tag}>`;
   }).join("");
   for (const image of labels.querySelectorAll("img")) {
     image.addEventListener("error", () => { image.hidden = true; });

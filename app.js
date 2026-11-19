@@ -56,6 +56,9 @@ function refUrl(ref) {
 }
 
 function drawPlayer(scene, panel, referenceIndex) {
+  const oldVideo = panel.querySelector("video");
+  if (oldVideo) oldVideo.pause();
+  if (oldVideo && oldVideo === manuallyPlaying) focusPlayer(null);
   const ref = scene.refs[referenceIndex];
   if (!ref) {
     panel.innerHTML = `<div class="player-empty"><h3>这一镜需要现场拍</h3><p>与前段同人、同一尾鱼。具体机位见授权与补拍。</p></div>`;
@@ -73,6 +76,7 @@ function drawPlayer(scene, panel, referenceIndex) {
       video.src = refUrl(ref);
       video.title = source.label;
       video.addEventListener("error", () => {
+        if (manuallyPlaying === video) focusPlayer(null);
         video.replaceWith(Object.assign(document.createElement("p"), {textContent:"页内视频暂不可播，请用下方的原发布页预览。"}));
       });
       video.addEventListener("timeupdate", () => {
@@ -211,7 +215,9 @@ function controlsMarkup() {
       ${film.scenes.map((scene, i) => `<a data-seek="${i}" href="${sceneHash(scene)}" style="flex-grow:${scene.end - scene.start}" aria-label="${timeRange(scene)} ${escapeHTML(scene.title)}" title="${timeRange(scene)} ${escapeHTML(scene.title)}"></a>`).join("")}
     </div>
     <span class="counter mono"></span>
-    <button id="clean" type="button" aria-pressed="false" title="H 键切换">隐藏脚本</button>`;
+    <button id="clean" type="button" aria-pressed="false" title="H 键切换">隐藏正文</button>
+    <button id="notes-toggle" type="button" aria-controls="scene-note" aria-expanded="false" title="N 键切换">说明</button>
+    <button id="motion-toggle" type="button" aria-pressed="true" title="暂停或继续背景实景">动景</button>`;
 }
 
 function currentTarget() {
@@ -224,18 +230,25 @@ function currentTarget() {
   return index;
 }
 
-function showProgress() {
+function showProgress(forceFocus = false) {
   const pageIndex = currentTarget();
-  if (cursor === pageIndex) return;
+  if (cursor === pageIndex && !forceFocus) return;
+  const lastScene = film.scenes[cursor - 1];
   pages[cursor]?.querySelectorAll("video").forEach(video => video.pause());
   cursor = pageIndex;
   const sceneIndex = pageIndex - 1;
   const inScene = sceneIndex >= 0 && sceneIndex < film.scenes.length;
   controls.hidden = pageIndex === 0;
-  document.body.classList.toggle("reading", pageIndex > 0);
+  const scene = film.scenes[sceneIndex];
+  if (manuallyPlaying?.paused) focusPlayer(null);
+  showStage(scene, Boolean(scene && (forceFocus || scene.region !== lastScene?.region)));
+  updateNote(scene);
   previous.disabled = pageIndex === 0;
   next.disabled = pageIndex === pages.length - 1;
   hideScript.disabled = !inScene;
+  noteToggle.disabled = !inScene;
+  motionToggle.disabled = !inScene || reduceMotion.matches;
+  motionToggle.setAttribute("aria-pressed", String(motionEnabled && !reduceMotion.matches));
   counter.textContent = inScene ? `${String(sceneIndex + 1).padStart(2, "0")} / ${film.scenes.length}` : "素材";
   workTab.setAttribute("aria-current", inScene ? "location" : "false");
   sourcesTab.setAttribute("aria-current", pageIndex === pages.length - 1 ? "location" : "false");
@@ -246,27 +259,75 @@ function showProgress() {
   }
 }
 
-function move(step) {
-  const target = pages[Math.max(0, Math.min(pages.length - 1, currentTarget() + step))];
+function goTo(target, forceFocus = false) {
+  if (forceFocus && cursor === 0 && !reduceMotion.matches) {
+    carryCoverMap(main.querySelector(".map-board"));
+  }
   if (location.hash !== `#${target.id}`) history.pushState(null, "", `#${target.id}`);
-  target.scrollIntoView();
+  target.scrollIntoView({ behavior: "instant" });
   target.focus({ preventScroll: true });
-  showProgress();
+  showProgress(forceFocus);
+}
+
+function move(step) {
+  const index = Math.max(0, Math.min(pages.length - 1, currentTarget() + step));
+  goTo(pages[index]);
 }
 
 function toggleClean() {
   if (hideScript.disabled) return;
-  const page = pages[currentTarget()];
-  const top = page.getBoundingClientRect().top;
   const hidden = document.body.classList.toggle("clean");
   hideScript.setAttribute("aria-pressed", String(hidden));
-  hideScript.textContent = hidden ? "显示脚本" : "隐藏脚本";
-  window.scrollBy({ top: page.getBoundingClientRect().top - top, behavior: "instant" });
+  hideScript.textContent = hidden ? "显示正文" : "隐藏正文";
 }
 
-function toggleFull() {
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  else document.documentElement.requestFullscreen?.().catch(() => {});
+function updateNote(scene) {
+  note.hidden = !notesOpen || !scene;
+  noteToggle.setAttribute("aria-expanded", String(!note.hidden));
+  if (note.hidden) return;
+  note.innerHTML = `<header><span class="mono">${timeRange(scene)}</span>
+    <h2>${escapeHTML(scene.title)}</h2></header>
+    <p>${escapeHTML(scene.voice || scene.picture)}</p>
+    <p>${escapeHTML(scene.gap)}</p>`;
+}
+
+function toggleNotes() {
+  if (noteToggle.disabled) return;
+  notesOpen = !notesOpen;
+  updateNote(film.scenes[cursor - 1]);
+}
+
+function focusPlayer(video) {
+  manuallyPlaying = video;
+  stage.classList.toggle("manual-preview", Boolean(video));
+  const background = foreground?.querySelector("video");
+  if (!background) return;
+  if (video || !motionEnabled || reduceMotion.matches) background.pause();
+  else background.play().catch(() => {});
+}
+
+function setFullLabel() {
+  fullscreen.textContent = document.fullscreenElement
+    ? "退出全屏"
+    : document.body.classList.contains("immersive") ? "退出沉浸" : "全屏";
+}
+
+async function toggleFull() {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen().catch(() => {});
+    return;
+  }
+  if (document.body.classList.contains("immersive")) {
+    document.body.classList.remove("immersive");
+    setFullLabel();
+    return;
+  }
+  if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
+    await document.documentElement.requestFullscreen().catch(() => {});
+    if (document.fullscreenElement) return;
+  }
+  document.body.classList.add("immersive");
+  setFullLabel();
 }
 
 main.innerHTML = coverMarkup() + film.scenes.map(sceneMarkup).join("") + `
@@ -279,7 +340,7 @@ main.innerHTML = coverMarkup() + film.scenes.map(sceneMarkup).join("") + `
   </footer>`;
 const pages = [...main.querySelectorAll(".cover, .beat")];
 drawMap(main.querySelector(".map-board canvas"), main.querySelector(".map-labels"));
-drawMap(document.querySelector(".backdrop"));
+drawMap(camera.querySelector("canvas"), camera.querySelector(".map-labels"), false);
 film.scenes.forEach((scene, index) => drawReferences(scene, pages[index + 1]));
 drawAudit();
 controlsMarkup();
@@ -288,6 +349,11 @@ const previous = controls.querySelector("#previous");
 const next = controls.querySelector("#next");
 const hideScript = controls.querySelector("#clean");
 const counter = controls.querySelector(".counter");
+const noteToggle = controls.querySelector("#notes-toggle");
+const motionToggle = controls.querySelector("#motion-toggle");
+const note = document.querySelector("#scene-note");
+let notesOpen = false;
+let manuallyPlaying = null;
 const markers = controls.querySelectorAll("[data-seek]");
 let cursor = -1;
 let pendingFrame = 0;
@@ -302,13 +368,45 @@ function trackScroll() {
 previous.addEventListener("click", () => move(-1));
 next.addEventListener("click", () => move(1));
 hideScript.addEventListener("click", toggleClean);
+noteToggle.addEventListener("click", toggleNotes);
+motionToggle.addEventListener("click", () => {
+  const scene = film.scenes[cursor - 1];
+  stopScenery(scene);
+  motionToggle.setAttribute("aria-pressed", String(motionEnabled));
+  motionToggle.title = motionEnabled ? "暂停背景实景" : "继续背景实景";
+});
+main.addEventListener("play", event => {
+  if (event.target instanceof HTMLVideoElement) focusPlayer(event.target);
+}, true);
+main.addEventListener("pause", event => {
+  if (event.target === manuallyPlaying) focusPlayer(null);
+}, true);
+reduceMotion.addEventListener("change", () => {
+  motionToggle.disabled = !film.scenes[cursor - 1] || reduceMotion.matches;
+  motionToggle.setAttribute("aria-pressed", String(motionEnabled && !reduceMotion.matches));
+  focusPlayer(manuallyPlaying);
+});
+
+document.addEventListener("click", event => {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const anchor = event.target.closest?.('a[href^="#"]');
+  const target = anchor && document.getElementById(anchor.hash.slice(1));
+  if (!target || !pages.includes(target)) return;
+  event.preventDefault();
+  goTo(target, anchor.classList.contains("map-pin"));
+});
+const reveal = new IntersectionObserver(entries => {
+  for (const { target, isIntersecting } of entries) {
+    if (!isIntersecting) continue;
+    target.classList.add("entered");
+    reveal.unobserve(target);
+  }
+}, { rootMargin: "0px 0px -8% 0px" });
+main.querySelectorAll(".sheet").forEach(sheet => reveal.observe(sheet));
 window.addEventListener("scroll", trackScroll, { passive: true });
 window.addEventListener("resize", trackScroll);
-fullscreen.hidden = !document.fullscreenEnabled;
 fullscreen.addEventListener("click", toggleFull);
-document.addEventListener("fullscreenchange", () => {
-  fullscreen.textContent = document.fullscreenElement ? "退出全屏" : "全屏";
-});
+document.addEventListener("fullscreenchange", setFullLabel);
 window.addEventListener("keydown", event => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
   if (event.target.closest?.("input, textarea, select, video")) return;
@@ -318,6 +416,8 @@ window.addEventListener("keydown", event => {
   }
   if (event.key.toLowerCase() === "h") toggleClean();
   if (event.key.toLowerCase() === "f") toggleFull();
+  if (event.key.toLowerCase() === "n") toggleNotes();
+  if (event.key === "Escape" && document.body.classList.contains("immersive")) toggleFull();
 });
 
 requestAnimationFrame(() => {
