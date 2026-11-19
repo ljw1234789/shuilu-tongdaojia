@@ -13,32 +13,31 @@ function setStageCredit(url, label) {
   stageCredit.innerHTML = link(url, label);
 }
 
-function mapMode(mode, region) {
+function setStageMode(mode) {
   stage.dataset.mode = mode;
-  stageCredit.hidden = mode === "cover";
+  document.body.dataset.stage = mode;
+  camera.inert = mode !== "atlas";
+}
+
+function mapMode(mode, region) {
+  setStageMode(mode);
+  camera.dataset.framing = mode;
+  stageCredit.hidden = mode === "intro" || mode === "catalogue";
   if (region) {
+    highlightDistrict(camera.querySelector(".district-highlight"), region);
+    camera.dataset.region = region;
     const [x, y] = photoPins[region].position;
     camera.style.setProperty("--pin-x", `${x / MAP_WIDTH * 100}%`);
     camera.style.setProperty("--pin-y", `${y / MAP_HEIGHT * 100}%`);
   }
-  for (const pin of camera.querySelectorAll(".stage-pin")) {
+  for (const pin of camera.querySelectorAll(".map-pin")) {
     pin.toggleAttribute("data-active", pin.dataset.place === region);
   }
-  if (mode !== "cover") {
+  if (!stageCredit.hidden) {
     const pin = photoPins[region];
     if (pin) setStageCredit(pin.source, `取景照片 · ${pin.credit}`);
     else setStageCredit("https://datav.aliyun.com/portal/school/atlas/area_selector", "取景地图 · DataV 区划数据");
   }
-}
-
-function carryCoverMap(board) {
-  const { left, top, width, height } = board.getBoundingClientRect();
-  camera.style.setProperty("--cover-x", `${left + width / 2}px`);
-  camera.style.setProperty("--cover-y", `${top + height / 2}px`);
-  camera.style.setProperty("--cover-width", `${width}px`);
-  camera.classList.add("carry-cover");
-  camera.getBoundingClientRect();
-  camera.classList.remove("carry-cover");
 }
 
 function retireMedia() {
@@ -86,7 +85,7 @@ function sceneMedia(scene) {
   stageMedia.append(layer);
   requestAnimationFrame(() => {
     if (foreground !== layer) return;
-    stage.dataset.mode = archive ? "archive" : "view";
+    setStageMode(archive ? "archive" : "view");
     layer.classList.add("shown");
   });
 
@@ -104,7 +103,7 @@ function sceneMedia(scene) {
     setStageCredit(source.url, `实景预览 · ${source.owner} · ${clock(ref.from)}–${clock(ref.to)}`);
   };
   const restart = () => {
-    if (foreground !== layer || !motionEnabled || reduceMotion.matches || manuallyPlaying) return;
+    if (foreground !== layer || !motionEnabled || reduceMotion.matches || manuallyPlaying || detail.open) return;
     video.currentTime = ref.from;
     video.play().catch(() => {});
   };
@@ -122,21 +121,18 @@ function sceneMedia(scene) {
     setStageCredit(pin.source, `取景照片 · ${pin.credit}`);
   });
   layer.append(video);
-  if (!manuallyPlaying) video.play().catch(() => {});
+  if (!manuallyPlaying && !detail.open) video.play().catch(() => {});
 }
 
-function showStage(scene, focus = false) {
+function showStage(page, scene) {
   window.clearTimeout(mediaTimer);
   retireMedia();
-  if (!scene) {
-    mapMode("cover");
-    return;
-  }
-  const last = scene.end === film.scenes[film.scenes.length - 1].end;
-  const zoom = focus && !last;
-  mapMode(last ? "end" : zoom ? "focus" : "route", zoom ? scene.region : "");
-  if (!scene.refs.length || last) return;
-  mediaTimer = window.setTimeout(() => sceneMedia(scene), zoom && !reduceMotion.matches ? 1120 : 280);
+  const mode = page.dataset.mode;
+  const keepFocus = mode === "route" && camera.dataset.framing === "focus" && camera.dataset.region === scene?.region;
+  if (keepFocus) setStageMode(mode);
+  else mapMode(mode, page.dataset.place || "");
+  if (mode !== "route" || !scene?.refs.length) return;
+  mediaTimer = window.setTimeout(() => sceneMedia(scene), 110);
 }
 
 function stopScenery(scene) {
@@ -147,6 +143,6 @@ function stopScenery(scene) {
     if (motionEnabled && foreground && scene && stage.dataset.mode !== "archive") sceneMedia(scene);
     return;
   }
-  if (motionEnabled && !manuallyPlaying) video.play().catch(() => {});
+  if (motionEnabled && !manuallyPlaying && !detail.open) video.play().catch(() => {});
   else video.pause();
 }

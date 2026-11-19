@@ -2,30 +2,35 @@
 
 const photoPins = {
   north: {
+    district: 441800,
     stamp: "江", position: [277, 108], tilt: -4,
     image: "https://ep.ycwb.com/epaper/ycwb/resfile/2024-04-30/A06/14886197_dzzzz4_1714396152295_b.jpg",
     source: "https://ep.ycwb.com/epaper/ycwb/html/2024-04/30/content_6_643495.htm",
     credit: "羊城晚报 · 清远峡"
   },
   salt: {
+    district: 440600,
     stamp: "龙", position: [220, 220], tilt: -3,
     image: "https://oss.gz-cmc.com/pgcr/root/huacheng/upload/news/image/2026/06/06/f1acdf76460448d7afb82eb1fad970d9.jpg?x-oss-process=style/content",
     source: window.FILM.sources.salt.url,
     credit: "广州日报新花城 · 盐步老龙"
   },
   pan: {
+    district: 440100,
     stamp: "桨", position: [401, 222], tilt: 3,
     image: "https://oss.gz-cmc.com/pgcr/root/huacheng/upload/news/image/2026/06/19/b72b902b10f9454083ce6d7f0f5e15fa.jpg?x-oss-process=style/content",
     source: window.FILM.sources.pan2026.url,
     credit: "广州日报新花城 · 泮塘迎龙"
   },
   letter: {
+    district: 440500,
     stamp: "信", position: [543, 140], tilt: 4,
     image: "https://www.shantou.gov.cn/img/0/604/604845/2477473.jpg",
     source: "https://www.shantou.gov.cn/wgxj/zwgk/gzdt/content/post_2477473.html",
     credit: "汕头市文化广电旅游体育局 · 小公园"
   },
   jiang: {
+    district: 440800,
     stamp: "港", position: [108, 310], tilt: -4,
     image: "https://mmbiz.qpic.cn/sz_mmbiz_jpg/2ib8BIPb0awp3pcX8NDeIR7xTCezez6RRDNYymhrrSgObS6HVib4qKZw6v4OxBgUmTw6HusauLj8ltm4yjVJkzrQ/640?wx_fmt=jpeg&from=appmsg&wxfrom=5&wx_lazy=1&tp=webp",
     source: "https://www.zhanjiang.gov.cn/zjswj/gkmlpt/content/2/2213/post_2213027.html",
@@ -35,6 +40,7 @@ const photoPins = {
 
 const MAP_WIDTH = 640;
 const MAP_HEIGHT = 385;
+const districtColors = ["#809464", "#a0a76d", "#b7a067", "#c19a70", "#ad886b"];
 
 function mapPoint(lng, lat) {
   return [(lng - 109.1) * 66 + 44, (25.7 - lat) * 57 + 15];
@@ -49,7 +55,7 @@ function tracePolygon(ctx, ring) {
   ctx.closePath();
 }
 
-function drawMap(canvas, labels, interactive = true) {
+function drawMap(canvas, labels) {
   const ctx = canvas.getContext("2d");
   const scale = Math.min(2, window.devicePixelRatio || 1);
   canvas.width = MAP_WIDTH * scale;
@@ -58,7 +64,6 @@ function drawMap(canvas, labels, interactive = true) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  const colors = ["#809464", "#a0a76d", "#b7a067", "#c19a70", "#ad886b"];
   ctx.save();
   ctx.shadowColor = "rgba(116, 93, 43, .17)";
   ctx.shadowBlur = 14;
@@ -72,7 +77,7 @@ function drawMap(canvas, labels, interactive = true) {
   for (const [color, rings] of window.GUANGDONG_DISTRICTS) {
     ctx.beginPath();
     rings.forEach(ring => tracePolygon(ctx, ring));
-    ctx.fillStyle = colors[color];
+    ctx.fillStyle = districtColors[color];
     ctx.fill();
     ctx.lineWidth = .85;
     ctx.strokeStyle = "#e6dcc0";
@@ -89,7 +94,7 @@ function drawMap(canvas, labels, interactive = true) {
   ctx.fill();
   if (!labels) return;
 
-  labels.innerHTML = film.locations.map(([id, label, lng, lat, sceneIndex]) => {
+  labels.innerHTML = film.locations.map(([id, label, lng, lat]) => {
     const pin = photoPins[id];
     const [x, y] = mapPoint(lng, lat);
     const [px, py] = pin.position;
@@ -108,18 +113,34 @@ function drawMap(canvas, labels, interactive = true) {
     ctx.strokeStyle = "#f7efdb";
     ctx.stroke();
 
-    const tag = interactive ? "a" : "div";
-    const href = interactive ? ` href="${sceneHash(film.scenes[sceneIndex])}"` : "";
-    return `<${tag} class="${interactive ? "map-pin" : "stage-pin"}" data-place="${id}"${href}
+    return `<a class="map-pin" data-place="${id}" href="#place-${id}"
               style="left:${px / MAP_WIDTH * 100}%;top:${py / MAP_HEIGHT * 100}%;--tilt:${pin.tilt}deg">
       <span class="pin-frame"><span class="pin-stamp" aria-hidden="true">${pin.stamp}</span>
         <img alt="" decoding="async" referrerpolicy="no-referrer" src="${escapeHTML(pin.image)}">
       </span><span class="pin-label">${escapeHTML(label)}</span>
-    </${tag}>`;
+    </a>`;
   }).join("");
   for (const image of labels.querySelectorAll("img")) {
     image.addEventListener("error", () => { image.hidden = true; });
   }
+}
+
+function highlightDistrict(canvas, place) {
+  const district = window.GUANGDONG_DISTRICTS.find(([, , code]) => code === photoPins[place].district);
+  if (!district) return;
+  const [color, rings] = district;
+  const ctx = canvas.getContext("2d");
+  const scale = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = MAP_WIDTH * scale;
+  canvas.height = MAP_HEIGHT * scale;
+  ctx.scale(scale, scale);
+  ctx.beginPath();
+  rings.forEach(ring => tracePolygon(ctx, ring));
+  ctx.fillStyle = districtColors[color];
+  ctx.strokeStyle = "#f4ead2";
+  ctx.lineWidth = 1.2;
+  ctx.fill();
+  ctx.stroke();
 }
 
 function photoCredits() {

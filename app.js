@@ -6,6 +6,17 @@ const controls = document.querySelector("#controls");
 const workTab = document.querySelector("#storyTab");
 const sourcesTab = document.querySelector("#sourcesTab");
 const fullscreen = document.querySelector("#fullscreen");
+const mapTab = document.querySelector("#mapTab");
+const detail = document.querySelector("#detail");
+const detailContent = detail.querySelector(".detail-content");
+const selectedReferences = new Map();
+const chapters = {
+  salt: ["佛山南海", "盐步", "每到端午，老龙从泥里出水。"],
+  pan: ["广州荔湾", "泮塘", "顺着河涌，划去见一位老亲戚。"],
+  north: ["清远", "北江", "一条江穿过飞来峡，接上珠三角。"],
+  letter: ["汕头", "侨批", "人在海那头，信还得往家寄。"],
+  jiang: ["湛江遂溪", "江洪", "天还没亮，买鱼的人已经到了。"]
+};
 const licenseLabels = {
   buy: "可购授权",
   ask: "联系权利方",
@@ -117,21 +128,20 @@ function drawReferences(scene, section, referenceIndex = 0) {
   for (const control of list.querySelectorAll("[data-ref]")) {
     control.addEventListener("click", () => {
       const selected = Number(control.dataset.ref);
+      selectedReferences.set(scene.start, selected);
       drawReferences(scene, section, selected);
       list.querySelector(`[data-ref="${selected}"]`).focus({preventScroll:true});
     });
   }
 }
 
-function sceneMarkup(scene, index) {
+function detailMarkup(scene) {
   const kinds = sceneKinds(scene);
-  const id = sceneHash(scene).slice(1);
   return `
-    <section class="beat" id="${id}" aria-labelledby="heading-${id}" tabindex="-1">
-      <article class="sheet">
+      <article>
       <header class="scene-head">
-        <div><p class="eyebrow mono">${timeRange(scene)} · 分镜 ${String(index + 1).padStart(2, "0")}</p>
-        <h2 class="heading" id="heading-${id}">${escapeHTML(scene.title)}</h2>
+        <div><p class="eyebrow mono">${timeRange(scene)}</p>
+        <h2 class="heading" id="detail-title">${escapeHTML(scene.title)}</h2>
         <p class="muted">${escapeHTML(scene.location)}</p></div>
         <span class="badge ${kinds.includes("shoot") ? "shoot" : ""}">${escapeHTML(scene.match)}</span>
       </header>
@@ -153,8 +163,40 @@ function sceneMarkup(scene, index) {
           <div class="asset-list"></div>
         </div>
       </div>
-      </article>
-    </section>`;
+      </article>`;
+}
+
+function placeMarkup(region, scene) {
+  const [district, name, description] = chapters[region];
+  return `<section id="place-${region}" class="beat place" data-mode="focus" data-place="${region}"
+      aria-labelledby="title-${region}" tabindex="-1">
+    <article class="paper place-card">
+      <p class="eyebrow">${escapeHTML(district)}</p>
+      <h2 id="title-${region}" class="place-name">${escapeHTML(name)}</h2>
+      <p class="place-line">${escapeHTML(description)}</p>
+      <a class="paper-link" href="${sceneHash(scene)}">看分镜 <span aria-hidden="true">↓</span></a>
+    </article>
+  </section>`;
+}
+
+function sceneMarkup(scene, index) {
+  const id = sceneHash(scene).slice(1);
+  const last = index === film.scenes.length - 1;
+  const paragraph = index === 0 ? "刷过湿泥，木纹露出来。一双手扶住船身，水面轻轻晃了一下。" : scene.voice || scene.picture;
+  const card = last
+    ? `<p class="eyebrow">阅山河 · 广东</p>
+       <h2 class="closing-name" id="heading-${id}">${escapeHTML(film.title)}</h2>
+       <p class="story-line">${escapeHTML(film.tagline)}</p>`
+    : `<p class="eyebrow">${timeRange(scene)} <span aria-hidden="true">·</span> ${escapeHTML(chapters[scene.region][1])}</p>
+       <h2 class="story-title" id="heading-${id}">${escapeHTML(scene.title)}</h2>
+       <p class="story-line">${escapeHTML(paragraph)}</p>`;
+  return `<section class="beat story${last ? " closing" : ""}" id="${id}" data-mode="${last ? "end" : "route"}"
+      data-scene="${index}" aria-labelledby="heading-${id}" tabindex="-1">
+    <article class="paper story-card">
+      ${card}
+      <button class="paper-link details-button" type="button" data-details="${index}">分镜与素材 <span aria-hidden="true">↗</span></button>
+    </article>
+  </section>`;
 }
 
 function drawAudit(activeFilter = "all") {
@@ -192,16 +234,16 @@ function drawAudit(activeFilter = "all") {
 }
 
 function coverMarkup() {
-  return `<section id="cover" class="cover" aria-labelledby="cover-title" tabindex="-1">
-    <figure class="map-sheet" aria-label="广东取景点">
-      <div class="map-board"><canvas aria-hidden="true"></canvas><div class="map-labels"></div></div>
-    </figure>
-    <div class="cover-text">
+  return `<section id="cover" class="beat cover" data-mode="intro" aria-labelledby="cover-title" tabindex="-1">
+    <article class="paper opening-card">
       <p class="eyebrow">阅山河 · 广东</p>
-      <h1 id="cover-title">${escapeHTML(film.title)}</h1>
-      <p class="tagline">${escapeHTML(film.tagline)}</p>
-      <a class="down-link" href="#00-00">向下看分镜 <span aria-hidden="true">↓</span></a>
-    </div>
+      <p class="opening-question">${escapeHTML(film.opening)}</p>
+      <a class="paper-link" href="#map">沿水路往下看 <span aria-hidden="true">↓</span></a>
+    </article>
+    <h1 id="cover-title">${escapeHTML(film.title)}</h1>
+  </section>
+  <section id="map" class="beat atlas" data-mode="atlas" aria-label="广东取景地图" tabindex="-1">
+    <p class="atlas-caption">点照片看地点 <a href="#place-salt">顺着水路看 <span aria-hidden="true">↓</span></a></p>
   </section>`;
 }
 
@@ -221,7 +263,7 @@ function controlsMarkup() {
 }
 
 function currentTarget() {
-  const readingLine = Math.max(100, Math.min(window.innerHeight * .44, 300));
+  const readingLine = window.innerHeight * .5;
   let index = 0;
   for (let i = 1; i < pages.length; i++) {
     if (pages[i].getBoundingClientRect().top > readingLine) break;
@@ -230,43 +272,45 @@ function currentTarget() {
   return index;
 }
 
-function showProgress(forceFocus = false) {
+function sceneFor(page) {
+  return film.scenes[Number(page?.dataset.scene ?? -1)];
+}
+
+function showProgress() {
   const pageIndex = currentTarget();
-  if (cursor === pageIndex && !forceFocus) return;
-  const lastScene = film.scenes[cursor - 1];
-  pages[cursor]?.querySelectorAll("video").forEach(video => video.pause());
+  if (cursor === pageIndex) return;
+  pages[cursor]?.classList.remove("current");
   cursor = pageIndex;
-  const sceneIndex = pageIndex - 1;
-  const inScene = sceneIndex >= 0 && sceneIndex < film.scenes.length;
-  controls.hidden = pageIndex === 0;
-  const scene = film.scenes[sceneIndex];
-  if (manuallyPlaying?.paused) focusPlayer(null);
-  showStage(scene, Boolean(scene && (forceFocus || scene.region !== lastScene?.region)));
+  const page = pages[cursor];
+  page.classList.add("current");
+  const sceneIndex = Number(page.dataset.scene ?? -1);
+  const scene = sceneFor(page);
+  const mode = page.dataset.mode;
+  showStage(page, scene);
   updateNote(scene);
   previous.disabled = pageIndex === 0;
   next.disabled = pageIndex === pages.length - 1;
-  hideScript.disabled = !inScene;
-  noteToggle.disabled = !inScene;
-  motionToggle.disabled = !inScene || reduceMotion.matches;
+  hideScript.disabled = mode === "atlas" || mode === "catalogue";
+  noteToggle.disabled = !scene;
+  motionToggle.disabled = !scene || reduceMotion.matches;
   motionToggle.setAttribute("aria-pressed", String(motionEnabled && !reduceMotion.matches));
-  counter.textContent = inScene ? `${String(sceneIndex + 1).padStart(2, "0")} / ${film.scenes.length}` : "素材";
-  workTab.setAttribute("aria-current", inScene ? "location" : "false");
-  sourcesTab.setAttribute("aria-current", pageIndex === pages.length - 1 ? "location" : "false");
+  counter.textContent = scene
+    ? `${String(sceneIndex + 1).padStart(2, "0")} / ${film.scenes.length}`
+    : ({ intro: "开场", atlas: "地图", focus: "站点", catalogue: "素材" })[mode];
+  mapTab.setAttribute("aria-current", mode === "atlas" ? "location" : "false");
+  workTab.setAttribute("aria-current", scene ? "location" : "false");
+  sourcesTab.setAttribute("aria-current", mode === "catalogue" ? "location" : "false");
   for (const marker of markers) {
-    const selected = Number(marker.dataset.seek) === sceneIndex;
-    marker.toggleAttribute("aria-current", selected);
-    if (selected) marker.setAttribute("aria-current", "step");
+    if (Number(marker.dataset.seek) === sceneIndex) marker.setAttribute("aria-current", "step");
+    else marker.removeAttribute("aria-current");
   }
 }
 
-function goTo(target, forceFocus = false) {
-  if (forceFocus && cursor === 0 && !reduceMotion.matches) {
-    carryCoverMap(main.querySelector(".map-board"));
-  }
+function goTo(target) {
   if (location.hash !== `#${target.id}`) history.pushState(null, "", `#${target.id}`);
   target.scrollIntoView({ behavior: "instant" });
   target.focus({ preventScroll: true });
-  showProgress(forceFocus);
+  showProgress();
 }
 
 function move(step) {
@@ -294,7 +338,7 @@ function updateNote(scene) {
 function toggleNotes() {
   if (noteToggle.disabled) return;
   notesOpen = !notesOpen;
-  updateNote(film.scenes[cursor - 1]);
+  updateNote(sceneFor(pages[cursor]));
 }
 
 function focusPlayer(video) {
@@ -302,7 +346,7 @@ function focusPlayer(video) {
   stage.classList.toggle("manual-preview", Boolean(video));
   const background = foreground?.querySelector("video");
   if (!background) return;
-  if (video || !motionEnabled || reduceMotion.matches) background.pause();
+  if (video || detail.open || !motionEnabled || reduceMotion.matches) background.pause();
   else background.play().catch(() => {});
 }
 
@@ -330,20 +374,30 @@ async function toggleFull() {
   setFullLabel();
 }
 
-main.innerHTML = coverMarkup() + film.scenes.map(sceneMarkup).join("") + `
-  <section class="beat" id="sources" aria-labelledby="audit-title" tabindex="-1"></section>
+function openDetail(scene) {
+  detailContent.innerHTML = detailMarkup(scene);
+  drawReferences(scene, detailContent, selectedReferences.get(scene.start) ?? 0);
+  detail.showModal();
+  detail.scrollTop = 0;
+  focusPlayer(null);
+}
+
+main.innerHTML = coverMarkup() + film.scenes.map((scene, index) => {
+  const entersPlace = index === 0 || film.scenes[index - 1].region !== scene.region;
+  return (entersPlace ? placeMarkup(scene.region, scene) : "") + sceneMarkup(scene, index);
+}).join("") + `
+  <section class="beat catalogue" id="sources" data-mode="catalogue" aria-labelledby="audit-title" tabindex="-1"></section>
   <footer class="credits">
     <h2>地图照片来源</h2>
     <p>照片用于取景预览。成片使用需依各来源的授权条件。</p>
     <div>${photoCredits()}</div>
     <p>取景点示意 · ${link("https://datav.aliyun.com/portal/school/atlas/area_selector", "DataV 区划数据")}</p>
   </footer>`;
-const pages = [...main.querySelectorAll(".cover, .beat")];
-drawMap(main.querySelector(".map-board canvas"), main.querySelector(".map-labels"));
-drawMap(camera.querySelector("canvas"), camera.querySelector(".map-labels"), false);
-film.scenes.forEach((scene, index) => drawReferences(scene, pages[index + 1]));
+const pages = [...main.querySelectorAll(".beat")];
+drawMap(camera.querySelector("canvas"), camera.querySelector(".map-labels"));
 drawAudit();
 controlsMarkup();
+controls.hidden = false;
 
 const previous = controls.querySelector("#previous");
 const next = controls.querySelector("#next");
@@ -370,46 +424,48 @@ next.addEventListener("click", () => move(1));
 hideScript.addEventListener("click", toggleClean);
 noteToggle.addEventListener("click", toggleNotes);
 motionToggle.addEventListener("click", () => {
-  const scene = film.scenes[cursor - 1];
+  const scene = sceneFor(pages[cursor]);
   stopScenery(scene);
   motionToggle.setAttribute("aria-pressed", String(motionEnabled));
   motionToggle.title = motionEnabled ? "暂停背景实景" : "继续背景实景";
 });
-main.addEventListener("play", event => {
+detail.addEventListener("play", event => {
   if (event.target instanceof HTMLVideoElement) focusPlayer(event.target);
 }, true);
-main.addEventListener("pause", event => {
+detail.addEventListener("pause", event => {
   if (event.target === manuallyPlaying) focusPlayer(null);
 }, true);
+detail.addEventListener("close", () => {
+  detail.querySelectorAll("video").forEach(video => video.pause());
+  detailContent.replaceChildren();
+  focusPlayer(null);
+});
 reduceMotion.addEventListener("change", () => {
-  motionToggle.disabled = !film.scenes[cursor - 1] || reduceMotion.matches;
+  motionToggle.disabled = !sceneFor(pages[cursor]) || reduceMotion.matches;
   motionToggle.setAttribute("aria-pressed", String(motionEnabled && !reduceMotion.matches));
   focusPlayer(manuallyPlaying);
 });
 
 document.addEventListener("click", event => {
   if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const detailButton = event.target.closest?.("[data-details]");
+  if (detailButton) {
+    openDetail(film.scenes[Number(detailButton.dataset.details)]);
+    return;
+  }
   const anchor = event.target.closest?.('a[href^="#"]');
   const target = anchor && document.getElementById(anchor.hash.slice(1));
   if (!target || !pages.includes(target)) return;
   event.preventDefault();
-  goTo(target, anchor.classList.contains("map-pin"));
+  goTo(target);
 });
-const reveal = new IntersectionObserver(entries => {
-  for (const { target, isIntersecting } of entries) {
-    if (!isIntersecting) continue;
-    target.classList.add("entered");
-    reveal.unobserve(target);
-  }
-}, { rootMargin: "0px 0px -8% 0px" });
-main.querySelectorAll(".sheet").forEach(sheet => reveal.observe(sheet));
 window.addEventListener("scroll", trackScroll, { passive: true });
 window.addEventListener("resize", trackScroll);
 fullscreen.addEventListener("click", toggleFull);
 document.addEventListener("fullscreenchange", setFullLabel);
 window.addEventListener("keydown", event => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
-  if (event.target.closest?.("input, textarea, select, video")) return;
+  if (detail.open || event.target.closest?.("input, textarea, select, video")) return;
   if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
     event.preventDefault();
     move(event.key === "ArrowRight" ? 1 : -1);
@@ -421,6 +477,6 @@ window.addEventListener("keydown", event => {
 });
 
 requestAnimationFrame(() => {
-  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({behavior: "instant"});
   showProgress();
 });
