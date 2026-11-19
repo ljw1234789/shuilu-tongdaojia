@@ -5,6 +5,7 @@ const main = document.querySelector("#main");
 const controls = document.querySelector("#controls");
 const proposalTab = document.querySelector("#proposalTab");
 const workTab = document.querySelector("#storyTab");
+const productionTab = document.querySelector("#productionTab");
 const sourcesTab = document.querySelector("#sourcesTab");
 const fullscreen = document.querySelector("#fullscreen");
 const mapTab = document.querySelector("#mapTab");
@@ -23,12 +24,18 @@ const licenseLabels = {
   ask: "联系权利方",
   ref: "仅作参考",
   shoot: "需补拍",
-  post: "后期制作"
+  post: "后期制作",
+  must: "必须实拍",
+  event: "仪式场次",
+  flex: "实拍或授权",
+  archive: "馆藏档案",
+  reuse: "沿用素材"
 };
 const filters = [
   ["all", "全部"],
   ["buy", "可购授权"],
   ["ask", "联系权利方"],
+  ["must", "必须实拍"],
   ["shoot", "需补拍"],
   ["post", "后期制作"]
 ];
@@ -53,8 +60,9 @@ function badge(kind) {
 }
 function sceneKinds(scene) {
   const result = new Set(scene.refs.map(ref => film.sources[ref.key].kind));
-  if (!["沿用上一段", "档案有来源", "大致可替"].includes(scene.match)) result.add("shoot");
-  if (scene.match === "沿用上一段") result.add("post");
+  result.add(scene.production);
+  if (["must", "event", "flex"].includes(scene.production)) result.add("shoot");
+  if (scene.production === "reuse") result.add("post");
   return [...result];
 }
 
@@ -144,7 +152,7 @@ function detailMarkup(scene) {
         <div><p class="eyebrow mono">${timeRange(scene)}</p>
         <h2 class="heading" id="detail-title">${escapeHTML(scene.title)}</h2>
         <p class="muted">${escapeHTML(scene.location)}</p></div>
-        <span class="badge ${kinds.includes("shoot") ? "shoot" : ""}">${escapeHTML(scene.match)}</span>
+        ${badge(scene.production)}
       </header>
       <div class="scene-grid">
         <div>
@@ -236,7 +244,43 @@ function scriptMarkup() {
           <td>${label(3)}${escapeHTML(scene.sound)}</td>
         </tr>`).join("")}</tbody>
       </table>
-      <a class="paper-link" href="#sources">查看素材总表 <span aria-hidden="true">↓</span></a>
+      <a class="paper-link" href="#production">查看拍摄排期与预算 <span aria-hidden="true">↓</span></a>
+    </article>
+  </section>`;
+}
+
+function productionMarkup() {
+  const {intro, schedule, decisions, expenses, contingency, scope, rateSource} = film.production;
+  const rows = expenses.map(([key, label, units, low, high, note]) => ({
+    key, label, formula: units > 1 ? `${units} × ${low.toLocaleString("zh-CN")}–${high.toLocaleString("zh-CN")}` : note,
+    low: units * low, high: units * high
+  }));
+  const sums = entries => ["low", "high"].map(bound => entries.reduce((sum, row) => sum + row[bound], 0));
+  const shoot = sums(rows.filter(row => ["crew", "equipment", "travel", "location"].includes(row.key)));
+  const total = sums(rows).map(amount => Math.round(amount * (100 + contingency) / 100));
+  const range = (low, high) => `${low.toLocaleString("zh-CN")}–${high.toLocaleString("zh-CN")} 元`;
+  return `<section class="beat catalogue" id="production" data-mode="catalogue" aria-labelledby="production-title" tabindex="-1">
+    <article class="sheet submission production-plan">
+      <p class="eyebrow">阅山河 · 广东 · 03:00 / 16:9</p>
+      <h2 class="heading" id="production-title">实拍排期与预算</h2>
+      <p class="table-note">${escapeHTML(intro)}</p>
+      <h3>拍摄排期</h3>
+      <ol class="shoot-schedule">${schedule.map(stop => `<li>
+        <div><a class="slot-title" href="${sceneHash(stop)}">${escapeHTML(stop.where)}</a><span class="mono">${timeRange(stop)} · ${stop.days} 组日</span></div>
+        <div><strong>${escapeHTML(stop.window)}</strong><p>${escapeHTML(stop.work)}</p></div>
+      </li>`).join("")}</ol>
+      <h3>必拍与替代方案</h3>
+      <dl class="copy-list">${decisions.map(([label, value]) => `<dt>${escapeHTML(label)}</dt><dd>${escapeHTML(value)}</dd>`).join("")}</dl>
+      <h3 id="budget-title">费用估算</h3>
+      <p class="table-note">${escapeHTML(scope)}</p>
+      <table class="budget-table" aria-labelledby="budget-title">
+        <thead><tr><th scope="col">费用项</th><th scope="col">测算依据</th><th scope="col">金额区间</th></tr></thead>
+        <tbody>${rows.map((row, index) => `<tr><th scope="row">${escapeHTML(row.label)}</th><td>${escapeHTML(row.formula)}</td><td>${range(row.low, row.high)}</td></tr>
+          ${index === 3 ? `<tr class="budget-subtotal"><th scope="row" colspan="2">现场拍摄小计</th><td>${range(...shoot)}</td></tr>` : ""}`).join("")}</tbody>
+        <tfoot><tr><th scope="row" colspan="2">主片合计（含 ${contingency}% 机动金）</th><td>${range(...total)}</td></tr></tfoot>
+      </table>
+      <p class="rate-source">${link(rateSource[1], rateSource[0])}</p>
+      <a class="paper-link" href="#sources">查看素材与授权状态 <span aria-hidden="true">↓</span></a>
     </article>
   </section>`;
 }
@@ -248,22 +292,19 @@ function drawAudit(activeFilter = "all") {
     <div class="sheet audit">
       <p class="eyebrow">精修版 · 03:00</p>
       <h2 class="heading" id="audit-title">素材总表</h2>
-      <p class="table-note">左侧是成片时码，素材卡内是源片秒点。光厂素材在原站播放器查看，可选授权档位。新闻实录与馆藏图需向原方申请。当前素材尚未取得成片使用权。</p>
+      <p class="table-note">左侧是成片时码，素材卡内是源片秒点。「必须实拍」为江洪的接缆与同一采购者跟拍。光厂素材可询购，新闻实录与馆藏图向原方申请，当前素材授权待确认。</p>
       <div class="filters" aria-label="筛选素材状态">
         ${filters.map(([code, label]) => `<button class="filter" type="button" data-filter="${code}" aria-pressed="${code === activeFilter}">${label}</button>`).join("")}
       </div>
       <div class="audit-list">
         <div class="audit-row header" aria-hidden="true"><span>成片时码</span><span>预览与来源</span><span>授权与补拍</span></div>
-        ${chosen.map(scene => {
-          const kinds = sceneKinds(scene);
-          return `<article class="audit-row">
+        ${chosen.map(scene => `<article class="audit-row">
             <div><span class="slot-time mono">${timeRange(scene)}</span><a href="${sceneHash(scene)}" class="slot-title">${escapeHTML(scene.title)}</a><p class="muted">${escapeHTML(scene.location)}</p></div>
             <div class="asset-links">
               ${scene.refs.length ? scene.refs.map(ref => `<div>${badge(film.sources[ref.key].kind)}${link(refUrl(ref), film.sources[ref.key].label)}<p class="muted">${escapeHTML(ref.where)}</p></div>`).join("") : "<p class='muted'>需拍摄同一人物的连续动作</p>"}
             </div>
-            <div><p class="slot-status">${kinds.filter(k => k === "shoot" || k === "post").map(badge).join("")}</p><p class="audit-gap">${escapeHTML(scene.gap)}</p></div>
-          </article>`;
-        }).join("")}
+            <div><p class="slot-status">${badge(scene.production)}</p><p class="audit-gap">${escapeHTML(scene.gap)}</p></div>
+          </article>`).join("")}
       </div>
     </div>`;
   for (const button of audit.querySelectorAll("[data-filter]")) {
@@ -338,10 +379,11 @@ function showProgress() {
   motionToggle.setAttribute("aria-pressed", String(motionEnabled && !reduceMotion.matches));
   counter.textContent = scene
     ? `${String(sceneIndex + 1).padStart(2, "0")} / ${film.scenes.length}`
-    : ({ cover: "开场", map: "地图", proposal: "文案", script: "脚本", sources: "素材" })[page.id] ?? "站点";
+    : ({ cover: "开场", map: "地图", proposal: "文案", script: "脚本", production: "拍摄", sources: "素材" })[page.id] ?? "站点";
   mapTab.setAttribute("aria-current", mode === "atlas" ? "location" : "false");
   proposalTab.setAttribute("aria-current", page.id === "proposal" ? "location" : "false");
   workTab.setAttribute("aria-current", scene || page.id === "script" ? "location" : "false");
+  productionTab.setAttribute("aria-current", page.id === "production" ? "location" : "false");
   sourcesTab.setAttribute("aria-current", page.id === "sources" ? "location" : "false");
   for (const marker of markers) {
     if (Number(marker.dataset.seek) === sceneIndex) marker.setAttribute("aria-current", "step");
@@ -428,7 +470,7 @@ function openDetail(scene) {
 main.innerHTML = coverMarkup() + film.scenes.map((scene, index) => {
   const entersPlace = index === 0 || film.scenes[index - 1].region !== scene.region;
   return (entersPlace ? placeMarkup(scene.region, scene) : "") + sceneMarkup(scene, index);
-}).join("") + proposalMarkup() + scriptMarkup() + `
+}).join("") + proposalMarkup() + scriptMarkup() + productionMarkup() + `
   <section class="beat catalogue" id="sources" data-mode="catalogue" aria-labelledby="audit-title" tabindex="-1"></section>
   <footer class="credits">
     <h2>地图照片来源</h2>
